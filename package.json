@@ -1,0 +1,43 @@
+{
+  "name": "sociavault-artist-finder",
+  "version": "2.0.0",
+  "description": "Busca perfiles de artistas en TikTok e Instagram a partir de una cancion usando Apify",
+  "type": "module",
+  "bin": {
+    "sociavault-artist-finder-mcp": "src/mcp-server.ts"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "cli": "tsx src/index.ts",
+    "mcp": "tsx src/mcp-server.ts"
+  },
+  "keywords": [
+    "apify",
+    "tiktok",
+    "instagram",
+    "artist",
+    "music"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "dotenv": "latest",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

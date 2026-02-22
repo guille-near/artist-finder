@@ -1,0 +1,78 @@
+import type { ArtistResult } from "@/types/artist";
+
+export const mockResults: ArtistResult[] = [
+  {
+    tiktok: {
+      handle: "kendricklamar",
+      nickname: "Kendrick Lamar",
+      bio: "Rapper, songwriter, and record producer from Compton, California",
+      bioLink: "https://www.instagram.com/kendricklamar",
+      verified: true,
+      followers: 12500000,
+      likes: 45300000,
+      videoCount: 127,
+      avatarUrl: "",
+    },
+    song: {
+      title: "luther (with sza)",
+      author: "Kendrick Lamar",
+      album: "GNX",
+      clipId: "7301234567890123456",
+      usageCount: 234500,
+      coverUrl: null,
+    },
+    instagram: {
+      handle: "kendricklamar",
+      source: "api_verified",
+      confidence: "high",
+      verified: true,
+      followers: 18200000,
+      biography: "pgLang",
+      profilePicUrl: null,
+      isBusinessAccount: false,
+    },
+    streaming: {
+      spotify: "https://open.spotify.com/track/2CGNAOSuO1MEFCbBRgUzjd",
+      appleMusic: "https://music.apple.com/song/1781316886",
+      amazonMusic: null,
+    },
+    creditsUsed: 4,
+  },
+  {
+    tiktok: {
+      handle: "badbunnypr",
+      nickname: "Bad Bunny",
+      bio: "Un Verano Sin Ti",
+      bioLink: "https://rimas.io/badbunny",
+      verified: true,
+      followers: 45200000,
+      likes: 312000000,
+      videoCount: 89,
+      avatarUrl: "",
+    },
+    song: {
+      title: "Monaco",
+      author: "Bad Bunny",
+      album: "nadie sabe lo que va a pasar manana",
+      clipId: "7312345678901234567",
+      usageCount: 1234000,
+      coverUrl: null,
+    },
+    instagram: {
+      handle: "badbunnypr",
+      source: "api_verified",
+      confidence: "high",
+      verified: true,
+      followers: 47800000,
+      biography: "el conejo malo",
+      profilePicUrl: null,
+      isBusinessAccount: false,
+    },
+    streaming: {
+      spotify: "https://open.spotify.com/track/example",
+      appleMusic: "https://music.apple.com/song/example",
+      amazonMusic: "https://music.amazon.com/albums/example",
+    },
+    creditsUsed: 4,
+  },
+];
