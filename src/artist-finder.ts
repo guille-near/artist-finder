@@ -1,5 +1,4 @@
-import { TikTokApifyClient, type ApifyMusicResult } from "./apify-client";
-import { SociaVaultClient } from "./sociavault-client";
+import { SociaVaultClient, type MusicSearchItem } from "./sociavault-client";
 import { extractInstagramFromProfile } from "./instagram-parser";
 import type {
   ArtistResult,
@@ -8,11 +7,9 @@ import type {
 } from "./types";
 
 export class ArtistFinder {
-  private apify: TikTokApifyClient;
   private sociavault: SociaVaultClient;
 
-  constructor(apifyToken: string, sociavaultKey: string) {
-    this.apify = new TikTokApifyClient(apifyToken);
+  constructor(sociavaultKey: string) {
     this.sociavault = new SociaVaultClient(sociavaultKey);
   }
 
@@ -23,19 +20,19 @@ export class ArtistFinder {
 
   /**
    * Flujo hibrido:
-   * 1a. Apify music search → buscar sonidos directamente (pestaña Sonidos de TikTok)
+   * 1a. SociaVault search/music → buscar sonidos directamente (pestaña Sonidos de TikTok)
    * 1b. Fallback: SociaVault keyword search → buscar canciones via videos
    * 2. SociaVault music/details → handles reales de artistas + streaming links
-   * 3. Apify profile-scraper → perfil completo con followers, bio, etc.
-   * 4. Parsear bio para Instagram
+   * 3. SociaVault profile → perfil completo con followers, bio, bioLink, etc.
+   * 4. Parsear bio + bioLink para Instagram
    */
   async findMultipleArtistsBySong(query: string, maxResults = 5): Promise<ArtistResult[]> {
     console.log(`\n--- Buscando: "${query}" ---`);
 
     const queryWords = this.normalize(query).split(/\s+/).filter(w => w.length > 1);
 
-    // ─── Paso 1a: Buscar sonidos directamente (Apify) ──────────
-    console.log("\n[Paso 1a] Buscando sonidos en TikTok (Apify music search)...");
+    // ─── Paso 1a: Buscar sonidos directamente (SociaVault) ─────
+    console.log("\n[Paso 1a] Buscando sonidos en TikTok (SociaVault search/music)...");
     let clipId: string | null = null;
     let songTitle = "";
     let songAuthor = "";
@@ -43,10 +40,10 @@ export class ArtistFinder {
     let songCoverUrl: string | null = null;
 
     try {
-      const musicResults = await this.apify.searchMusic(query, 10);
-      if (musicResults.length > 0) {
-        console.log(`  ${musicResults.length} sonidos encontrados`);
-        const bestMusic = this.findBestMatchingMusic(musicResults, queryWords);
+      const musicData = await this.sociavault.searchMusic(query);
+      if (musicData.music && musicData.music.length > 0) {
+        console.log(`  ${musicData.music.length} sonidos encontrados`);
+        const bestMusic = this.findBestMatchingMusic(musicData.music, queryWords);
         if (bestMusic) {
           clipId = bestMusic.id_str || String(bestMusic.id);
           songTitle = bestMusic.title;
@@ -150,34 +147,38 @@ export class ArtistFinder {
       return [];
     }
 
-    // ─── Paso 3: Perfiles completos (Apify) ─────────────────
-    console.log("\n[Paso 3] Obteniendo perfiles de TikTok (Apify)...");
+    // ─── Paso 3: Perfiles completos (SociaVault) ───────────
+    console.log("\n[Paso 3] Obteniendo perfiles de TikTok (SociaVault)...");
     const results: ArtistResult[] = [];
 
     for (const handle of artistHandles.slice(0, maxResults)) {
       try {
         console.log(`  @${handle}...`);
-        const profilePosts = await this.apify.getProfile(handle);
+        const profile = await this.sociavault.getProfile(handle);
 
         let bio = "";
+        let bioLink: string | null = null;
         let nickname = handle;
         let verified = false;
         let followers = 0;
+        let likes = 0;
         let videoCount = 0;
         let avatarUrl = "";
 
-        if (profilePosts && profilePosts.length > 0 && profilePosts[0].channel) {
-          const ch = profilePosts[0].channel;
-          bio = ch.bio || "";
-          nickname = ch.name || handle;
-          verified = ch.verified || false;
-          followers = ch.followers ?? 0;
-          videoCount = ch.videos ?? 0;
-          avatarUrl = ch.avatar || "";
+        if (profile.success && profile.user) {
+          const { user, stats } = profile;
+          bio = user.signature || "";
+          bioLink = user.bioLink?.link || null;
+          nickname = user.nickname || handle;
+          verified = user.verified || false;
+          followers = stats.followerCount ?? 0;
+          likes = stats.heartCount ?? 0;
+          videoCount = stats.videoCount ?? 0;
+          avatarUrl = user.avatarMedium || "";
           console.log(`    ${nickname} (${this.formatNumber(followers)} seguidores${verified ? ", verificado" : ""})`);
         }
 
-        const instagramFromBio = extractInstagramFromProfile(bio, null);
+        const instagramFromBio = extractInstagramFromProfile(bio, bioLink);
         const instagramData: InstagramData = {
           handle: instagramFromBio.handle,
           source: instagramFromBio.source,
@@ -194,7 +195,7 @@ export class ArtistFinder {
         }
 
         results.push({
-          tiktok: { handle, nickname, bio, bioLink: null, verified, followers, likes: 0, videoCount, avatarUrl },
+          tiktok: { handle, nickname, bio, bioLink, verified, followers, likes, videoCount, avatarUrl },
           song: { title: songTitle, author: songAuthor, album: songAlbum, clipId, usageCount: songUsageCount, coverUrl: songCoverUrl },
           instagram: instagramData,
           streaming: streamingLinks,
@@ -215,11 +216,11 @@ export class ArtistFinder {
   }
 
   private findBestMatchingMusic(
-    items: ApifyMusicResult[],
+    items: MusicSearchItem[],
     queryWords: string[]
-  ): ApifyMusicResult | null {
+  ): MusicSearchItem | null {
     let bestScore = -Infinity;
-    let bestItem: ApifyMusicResult | null = null;
+    let bestItem: MusicSearchItem | null = null;
 
     for (const item of items) {
       let score = 0;
@@ -237,7 +238,10 @@ export class ArtistFinder {
       }
 
       if (titleMatches > 0 && artistMatches > 0) score += 10;
-      if (!item.is_original) score += 3;
+      if (!item.is_original_sound) score += 3;
+      if (item.is_pgc) score += 5;
+      if (item.is_author_artist) score += 3;
+      if (item.artists?.length > 0) score += 3;
       if (item.user_count > 1000) score += 2;
       if (item.user_count > 100000) score += 3;
       if (title.includes("original sound")) score -= 10;

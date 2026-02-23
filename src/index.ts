@@ -2,14 +2,7 @@ import "dotenv/config";
 import { ArtistFinder } from "./artist-finder";
 
 async function main() {
-  const apifyToken = process.env.APIFY_API_TOKEN;
   const sociavaultKey = process.env.SOCIAVAULT_API_KEY;
-
-  if (!apifyToken) {
-    console.error("Error: Configura APIFY_API_TOKEN en .env");
-    console.error("  Obtenlo en: https://console.apify.com/account#/integrations");
-    process.exit(1);
-  }
 
   if (!sociavaultKey) {
     console.error("Error: Configura SOCIAVAULT_API_KEY en .env");
@@ -32,7 +25,7 @@ async function main() {
   }
 
   const query = args.join(" ");
-  const finder = new ArtistFinder(apifyToken, sociavaultKey);
+  const finder = new ArtistFinder(sociavaultKey);
 
   try {
     const result = await finder.findArtistBySong(query);

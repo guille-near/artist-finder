@@ -3,7 +3,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { ArtistFinder } from "./artist-finder.js";
-import { TikTokApifyClient } from "./apify-client.js";
 import { SociaVaultClient } from "./sociavault-client.js";
 
 function getEnvOrThrow(name: string): string {
@@ -43,7 +42,6 @@ server.tool(
   },
   async ({ query, max_results }) => {
     const finder = new ArtistFinder(
-      getEnvOrThrow("APIFY_API_TOKEN"),
       getEnvOrThrow("SOCIAVAULT_API_KEY")
     );
 
@@ -179,7 +177,7 @@ server.tool(
 
 server.tool(
   "get_tiktok_profile",
-  "Obtiene el perfil completo de un usuario de TikTok: nombre, bio, seguidores, verificacion, avatar, e intenta extraer su Instagram de la bio.",
+  "Obtiene el perfil completo de un usuario de TikTok usando la API de SociaVault: nombre, bio, seguidores, verificacion, avatar, bioLink, e intenta extraer su Instagram de la bio.",
   {
     username: z
       .string()
@@ -187,10 +185,10 @@ server.tool(
   },
   async ({ username }) => {
     const clean = username.replace(/^@/, "");
-    const apify = new TikTokApifyClient(getEnvOrThrow("APIFY_API_TOKEN"));
-    const posts = await apify.getProfile(clean);
+    const client = new SociaVaultClient(getEnvOrThrow("SOCIAVAULT_API_KEY"));
+    const profile = await client.getProfile(clean);
 
-    if (!posts || posts.length === 0 || !posts[0].channel) {
+    if (!profile.success || !profile.user) {
       return {
         content: [
           {
@@ -201,18 +199,21 @@ server.tool(
       };
     }
 
-    const ch = posts[0].channel;
+    const { user, stats } = profile;
+    const bioLink = user.bioLink?.link || null;
 
     const { extractInstagramFromProfile } = await import("./instagram-parser.js");
-    const ig = extractInstagramFromProfile(ch.bio || "", null);
+    const ig = extractInstagramFromProfile(user.signature || "", bioLink);
 
     const lines = [
-      `**@${ch.username}** — ${ch.name}`,
-      `Verificado: ${ch.verified ? "Si" : "No"}`,
-      `Seguidores: ${ch.followers?.toLocaleString() || "N/A"}`,
-      `Videos: ${ch.videos || "N/A"}`,
-      ch.bio ? `Bio: ${ch.bio}` : null,
-      ch.avatar ? `Avatar: ${ch.avatar}` : null,
+      `**@${user.uniqueId}** — ${user.nickname}`,
+      `Verificado: ${user.verified ? "Si" : "No"}`,
+      `Seguidores: ${stats.followerCount?.toLocaleString() || "N/A"}`,
+      `Videos: ${stats.videoCount || "N/A"}`,
+      `Likes totales: ${stats.heartCount?.toLocaleString() || "N/A"}`,
+      user.signature ? `Bio: ${user.signature}` : null,
+      bioLink ? `Bio Link: ${bioLink}` : null,
+      user.avatarMedium ? `Avatar: ${user.avatarMedium}` : null,
       "",
       "**Instagram**",
       ig.handle
@@ -232,22 +233,34 @@ server.tool(
 
 server.tool(
   "search_tiktok_sounds",
-  "Busca sonidos/canciones en TikTok por keyword. Equivalente a la pestaña 'Sonidos' de TikTok. " +
-    "Devuelve titulo, artista, album, duracion, y cantidad de videos que usan el sonido.",
+  "Busca sonidos/canciones en TikTok por keyword usando la API de SociaVault. " +
+    "Equivalente a la pestaña 'Sonidos' de TikTok. " +
+    "Devuelve titulo, artista, album, duracion, cantidad de videos, links de streaming y artistas verificados.",
   {
     query: z.string().describe("Keyword para buscar sonidos. Ejemplo: 'Monaco Bad Bunny'"),
     max_results: z
       .number()
       .min(1)
-      .max(20)
+      .max(10)
       .default(5)
-      .describe("Numero maximo de sonidos a devolver (1-20, default 5)"),
+      .describe("Numero maximo de sonidos a devolver (1-10, default 5)"),
+    region: z
+      .string()
+      .optional()
+      .describe("Codigo de pais Alpha-2 (default: US). Ejemplo: 'ES', 'MX', 'GB'"),
+    sort_type: z
+      .enum(["0", "1", "2", "3", "4"])
+      .optional()
+      .describe("Ordenar: 0=Relevancia, 1=Mas usadas, 2=Mas recientes, 3=Mas cortas, 4=Mas largas"),
   },
-  async ({ query, max_results }) => {
-    const apify = new TikTokApifyClient(getEnvOrThrow("APIFY_API_TOKEN"));
-    const results = await apify.searchMusic(query, max_results);
+  async ({ query, max_results, region, sort_type }) => {
+    const client = new SociaVaultClient(getEnvOrThrow("SOCIAVAULT_API_KEY"));
+    const data = await client.searchMusic(query, {
+      region,
+      sortType: sort_type,
+    });
 
-    if (results.length === 0) {
+    if (!data.music || data.music.length === 0) {
       return {
         content: [
           {
@@ -258,22 +271,43 @@ server.tool(
       };
     }
 
+    const results = data.music.slice(0, max_results);
+
     const summary = results
       .map((r, i) => {
+        const dspLinks: string[] = [];
+        if (r.tt_to_dsp_song_infos) {
+          for (const info of r.tt_to_dsp_song_infos) {
+            if (info.platform === 3) dspLinks.push(`Spotify: https://open.spotify.com/track/${info.song_id}`);
+            if (info.platform === 1) dspLinks.push(`Apple Music: https://music.apple.com/song/${info.song_id}`);
+            if (info.platform === 8) dspLinks.push(`Amazon Music: https://music.amazon.com/albums/${info.song_id}`);
+          }
+        }
+
+        const artists = r.artists?.length
+          ? r.artists.map((a) => `@${a.handle} (${a.nick_name}${a.is_verified ? ", verificado" : ""})`).join(", ")
+          : null;
+
         return [
           `${i + 1}. **${r.title}** — ${r.author}`,
           r.album ? `   Album: ${r.album}` : null,
           `   Duracion: ${r.duration}s | Usado en: ${r.user_count.toLocaleString()} videos`,
           `   ClipId: ${r.id_str || r.id}`,
-          `   Original: ${r.is_original ? "Si" : "No"}`,
+          `   Original: ${r.is_original_sound ? "Si" : "No"}`,
+          artists ? `   Artistas: ${artists}` : null,
+          dspLinks.length > 0 ? `   ${dspLinks.join(" | ")}` : null,
         ]
           .filter(Boolean)
           .join("\n");
       })
       .join("\n\n");
 
+    const footer = data.has_more
+      ? `\n\n_${data.total} resultados totales. Hay mas paginas disponibles._`
+      : "";
+
     return {
-      content: [{ type: "text" as const, text: summary }],
+      content: [{ type: "text" as const, text: summary + footer }],
     };
   }
 );

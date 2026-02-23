@@ -30,6 +30,68 @@ export interface MusicDetailsData {
   };
 }
 
+export interface MusicSearchItem {
+  id: number;
+  id_str: string;
+  title: string;
+  author: string;
+  album: string;
+  duration: number;
+  user_count: number;
+  is_original_sound: boolean;
+  is_pgc: boolean;
+  is_commerce_music: boolean;
+  is_author_artist: boolean;
+  has_human_voice: boolean;
+  language: string;
+  artists: SociaVaultArtist[];
+  tt_to_dsp_song_infos?: DspSongInfo[];
+  cover_large?: { url_list: string[] };
+  cover_medium?: { url_list: string[] };
+  play_url?: { url_list: string[] };
+  matched_song?: {
+    id: string;
+    title: string;
+    author: string;
+    full_duration: number;
+  };
+  search_music_name?: string;
+  search_music_desc?: string;
+  theme_tags?: string[];
+}
+
+export interface MusicSearchData {
+  status_code: number;
+  music: MusicSearchItem[];
+  has_more: number;
+  cursor: number;
+  total: number;
+}
+
+export interface TikTokProfileData {
+  success: boolean;
+  user: {
+    id: string;
+    uniqueId: string;
+    nickname: string;
+    signature: string;
+    verified: boolean;
+    avatarLarger: string;
+    avatarMedium: string;
+    avatarThumb: string;
+    secUid: string;
+    privateAccount: boolean;
+    bioLink?: { link: string };
+  };
+  stats: {
+    followerCount: number;
+    followingCount: number;
+    heartCount: number;
+    videoCount: number;
+    friendCount: number;
+  };
+}
+
 export interface KeywordSearchData {
   success: boolean;
   search_item_list: Record<string, {
@@ -100,6 +162,27 @@ export class SociaVaultClient {
   }
 
   /**
+   * Buscar sonidos/musica en TikTok por keyword.
+   * Devuelve hasta 10 resultados por pagina con artistas, streaming links y metadata.
+   */
+  async searchMusic(
+    keyword: string,
+    options: { region?: string; sortType?: string; filterBy?: string; offset?: number } = {}
+  ): Promise<MusicSearchData> {
+    const params: Record<string, string> = { keyword };
+    if (options.region) params.region = options.region;
+    if (options.sortType) params.sort_type = options.sortType;
+    if (options.filterBy) params.filter_by = options.filterBy;
+    if (options.offset !== undefined) params.offset = String(options.offset);
+
+    const result = await this.request<{ data: MusicSearchData }>(
+      "tiktok/search/music",
+      params
+    );
+    return result.data;
+  }
+
+  /**
    * Obtener detalles de una cancion por clipId.
    * Devuelve artistas oficiales con handles de TikTok + links de streaming.
    */
@@ -107,6 +190,18 @@ export class SociaVaultClient {
     const result = await this.request<{ data: MusicDetailsData }>(
       "tiktok/music/details",
       { clipId }
+    );
+    return result.data;
+  }
+
+  /**
+   * Obtener perfil publico de TikTok por handle.
+   * Devuelve bio (signature), bioLink, seguidores, verificacion, avatar, etc.
+   */
+  async getProfile(handle: string): Promise<TikTokProfileData> {
+    const result = await this.request<{ data: TikTokProfileData }>(
+      "tiktok/profile",
+      { handle }
     );
     return result.data;
   }
